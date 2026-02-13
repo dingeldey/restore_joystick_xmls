@@ -3,3 +3,5 @@ build
 dist
 dcs_restore.spec
 bms_restore.spec
+okb_update_directinput_guids.spec
+okb_restore.spec
