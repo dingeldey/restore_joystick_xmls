@@ -2,3 +2,4 @@
 build
 dist
 dcs_restore.spec
+bms_restore.spec

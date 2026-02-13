@@ -185,9 +185,16 @@ def restore_from_backups(settings: Settings) -> None:
         print("  (copy_if_missing=true was enabled)")
 
 
+def default_ini_path(filename: str) -> Path:
+    # When frozen (PyInstaller), sys.executable is the .exe path
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).with_name(filename)
+    # Normal python run
+    return Path(__file__).with_name(filename)
+
 def main() -> int:
     # Expect config.ini next to the script, unless user passes a path
-    config_path = Path(__file__).with_name("bmsconfig.ini")
+    config_path = default_ini_path("bmsconfig.ini")
     if len(sys.argv) >= 2:
         config_path = Path(sys.argv[1]).expanduser()
 

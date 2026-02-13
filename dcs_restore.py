@@ -239,8 +239,15 @@ def restore_dcs(settings: Settings) -> None:
         print(f"  Copied missing:              {copied_missing}")
 
 
+def default_ini_path(filename: str) -> Path:
+    # When frozen (PyInstaller), sys.executable is the .exe path
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).with_name(filename)
+    # Normal python run
+    return Path(__file__).with_name(filename)
+
 def main() -> int:
-    config_path = Path(__file__).with_name("dcsconfig.ini")
+    config_path = default_ini_path("dcsconfig.ini")
     if len(sys.argv) >= 2:
         config_path = Path(sys.argv[1]).expanduser()
 
