@@ -20,6 +20,33 @@ class Settings:
     zip_destination: str  # "backup_dir" or "bms_config_dir"
     copy_if_missing: bool
 
+def rel_display(path: Path, base: Path) -> str:
+    try:
+        return str(path.relative_to(base))
+    except Exception:
+        return str(path)
+
+
+def ask_run_mode() -> bool:
+    """
+    Returns True if dry-run is selected, False if replace is selected.
+    """
+    while True:
+        print("")
+        print("Select mode:")
+        print("  [D] Dry run (no changes)")
+        print("  [R] Replace files")
+        choice = input("Choice [D/R]: ").strip().lower()
+
+        if choice == "" or choice == "d":
+            print("Dry-run selected. No files will be modified.")
+            return True
+        if choice == "r":
+            print("Replace mode selected. Files may be modified.")
+            return False
+
+        print("Invalid choice. Please enter D or R.")
+
 
 def read_settings(config_path: Path) -> Settings:
     if not config_path.exists():
@@ -98,12 +125,7 @@ def choose_target(paths: list[Path]) -> Path:
 
 def make_zip_of_bms_config(settings: Settings) -> Path:
     src_dir = settings.bms_config_dir
-    dest_dir = (
-        settings.backup_dir
-        if settings.zip_destination == "backup_dir"
-        else settings.bms_config_dir
-    )
-
+    dest_dir = settings.backup_dir.parent
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -121,7 +143,7 @@ def make_zip_of_bms_config(settings: Settings) -> Path:
     return zip_path
 
 
-def restore_from_backups(settings: Settings) -> None:
+def restore_from_backups(settings: Settings, dry_run) -> None:
     backup_dir = settings.backup_dir
     bms_dir = settings.bms_config_dir
 
@@ -165,10 +187,22 @@ def restore_from_backups(settings: Settings) -> None:
         # Overwrite CONTENT only, keep target filename (incl. new GUID)
         tmp = target.with_suffix(target.suffix + ".tmp")
         try:
-            shutil.copyfile(backup_file, tmp)
-            os.replace(tmp, target)  # atomic replace on Windows
+            if dry_run:
+                print(f"[DRYRUN] Would restore -> {rel_display(target, bms_dir)}")
+            else:
+                tmp = target.with_suffix(target.suffix + ".tmp")
+                try:
+                    shutil.copyfile(backup_file, tmp)
+                    os.replace(tmp, target)
+                    print(f"[FIX]  Restored -> {rel_display(target, bms_dir)}")
+                finally:
+                    if tmp.exists():
+                        try:
+                            tmp.unlink()
+                        except OSError:
+                            pass
+
             restored += 1
-            print(f"[FIX]  Restored content -> {target.name}")
         finally:
             if tmp.exists():
                 try:
@@ -208,6 +242,7 @@ def main() -> int:
         config_path = Path(sys.argv[1]).expanduser()
 
     settings = read_settings(config_path)
+    dry_run = ask_run_mode()
 
     # Basic sanity checks
     if not settings.bms_config_dir.exists():
@@ -216,10 +251,11 @@ def main() -> int:
         print(f"[WARN] backup_dir not found yet (ok if empty/new): {settings.backup_dir}")
 
     # Step 1: zip current BMS config XMLs
-    make_zip_of_bms_config(settings)
+    if not dry_run:
+        make_zip_of_bms_config(settings)
 
     # Step 2: restore from backups (content replacement keeping new filename/GUID)
-    restore_from_backups(settings)
+    restore_from_backups(settings, dry_run)
     pause_exit()
     return 0
 

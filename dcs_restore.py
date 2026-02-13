@@ -20,6 +20,26 @@ class Settings:
     zip_destination: str  # "backup_dir" or "dcs_input_dir"
     copy_if_missing: bool
 
+def ask_run_mode() -> bool:
+    """
+    Returns True if dry-run is selected, False if replace is selected.
+    """
+    while True:
+        print("")
+        print("Select mode:")
+        print("  [D] Dry run (no changes)")
+        print("  [R] Replace files")
+        choice = input("Choice [D/R]: ").strip().lower()
+
+        if choice == "" or choice == "d":
+            print("Dry-run selected. No files will be modified.")
+            return True
+        if choice == "r":
+            print("Replace mode selected. Files may be modified.")
+            return False
+
+        print("Invalid choice. Please enter D or R.")
+
 
 def read_settings(config_path: Path) -> Settings:
     if not config_path.exists():
@@ -96,7 +116,7 @@ def zip_entire_folder(src_dir: Path, dest_dir: Path, prefix: str) -> Path:
     return zip_path
 
 
-def restore_dcs(settings: Settings) -> None:
+def restore_dcs(settings: Settings, dry_run) -> None:
     backup_root = settings.backup_dir
     dcs_root = settings.dcs_input_dir
 
@@ -184,10 +204,13 @@ def restore_dcs(settings: Settings) -> None:
             # Replace content while keeping target filename/GUID
             tmp = target_file.with_suffix(target_file.suffix + ".tmp")
             try:
-                shutil.copyfile(backup_file, tmp)
-                os.replace(tmp, target_file)  # atomic replace
+                if dry_run:
+                    print(f"[DRYRUN] Would restore -> {target_file.relative_to(dcs_root)}")
+                else:
+                    shutil.copyfile(backup_file, tmp)
+                    os.replace(tmp, target_file)
+                    print(f"[FIX]  Restored -> {target_file.relative_to(dcs_root)}")
                 restored += 1
-                print(f"[FIX]  Restored content -> {target_file.relative_to(dcs_root).as_posix()}")
             finally:
                 if tmp.exists():
                     try:
@@ -219,8 +242,12 @@ def restore_dcs(settings: Settings) -> None:
 
             tmp = target_file.with_suffix(target_file.suffix + ".tmp")
             try:
-                shutil.copyfile(backup_file, tmp)
-                os.replace(tmp, target_file)
+                if dry_run:
+                    print(f"[DRYRUN] Would restore -> {target_file.relative_to(dcs_root)}")
+                else:
+                    shutil.copyfile(backup_file, tmp)
+                    os.replace(tmp, target_file)
+                    print(f"[FIX]  Restored -> {target_file.relative_to(dcs_root)}")
                 restored += 1
                 print(f"[FIX]  Restored -> {rel.as_posix()}")
             finally:
@@ -260,13 +287,23 @@ def main() -> int:
         config_path = Path(sys.argv[1]).expanduser()
 
     settings = read_settings(config_path)
+    dry_run = ask_run_mode()
 
     # Step 1: zip snapshot (entire folder)
-    dest_dir = settings.backup_dir if settings.zip_destination == "backup_dir" else settings.dcs_input_dir
-    zip_entire_folder(settings.dcs_input_dir, dest_dir, settings.zip_name_prefix)
+    if not dry_run:
+        # Put ZIPs one hierarchy level above the backup directory
+        dest_dir = settings.backup_dir.parent
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        zip_entire_folder(
+            settings.dcs_input_dir,
+            dest_dir,
+            settings.zip_name_prefix,
+        )
+
 
     # Step 2: restore
-    restore_dcs(settings)
+    restore_dcs(settings, dry_run)
     pause_exit()
     return 0
 
